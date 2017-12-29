@@ -235,6 +235,7 @@ library:
   - Stack.Types.CompilerBuild
   - Stack.Types.Urls
   - Stack.Types.Compiler
+  - Stack.Types.ComponentId
   - Stack.Types.Config
   - Stack.Types.Config.Build
   - Stack.Types.Docker
