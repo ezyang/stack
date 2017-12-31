@@ -42,6 +42,7 @@ import qualified Distribution.Text as C
 import           Path.Extra (toFilePathNoTrailingSep)
 import           Stack.GhcPkg
 import           Stack.Types.Compiler
+import           Stack.Types.ComponentId
 import           Stack.Types.GhcPkgId
 import           Stack.Types.PackageDump
 import           Stack.Types.PackageIdentifier
@@ -278,9 +279,16 @@ hasDebuggingSymbols dir lib = do
 
 
 -- | Dump information for a single package
+--
+-- Technically, this is a library (a single component) but it is going
+-- to have a munged package name to make it "look" like another package.
+--
+-- Blah blah, this is gonig to depend on how we actually go about doing
+-- this.
 data DumpPackage profiling haddock symbols = DumpPackage
     { dpGhcPkgId :: !GhcPkgId
     , dpPackageIdent :: !PackageIdentifier
+    , dpSourceLibName :: ComponentName
     , dpLicense :: !(Maybe C.License)
     , dpLibDirs :: ![FilePath]
     , dpLibraries :: ![Text]

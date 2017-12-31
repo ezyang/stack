@@ -44,7 +44,8 @@ main = do
     stack <- findExe "stack"
 
     let testDir = currDir </> "tests"
-    tests <- getDirectoryContents testDir >>= filterM (hasTest testDir) . sort
+    -- tests <- getDirectoryContents testDir >>= filterM (hasTest testDir) . sort
+    let tests = ["internal-libraries"]
 
     envOrig <- getEnvironment
 

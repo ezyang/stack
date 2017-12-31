@@ -752,6 +752,8 @@ targetWarnings stackYaml localTargets nonLocalTargets mfileTargets = do
 --
 -- If 'True' is passed for loadAllDeps, this loads all local deps, even
 -- if they aren't intermediate.
+--
+-- TODO: figure out what this means in per component world
 getExtraLoadDeps
     :: Bool
     -> SourceMap

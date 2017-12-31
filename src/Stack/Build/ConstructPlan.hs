@@ -49,6 +49,7 @@ import           Stack.PrettyPrint
 import           Stack.Types.Build
 import           Stack.Types.BuildPlan
 import           Stack.Types.Compiler
+import           Stack.Types.ComponentId
 import           Stack.Types.Config
 import           Stack.Types.FlagName
 import           Stack.Types.GhcPkgId
@@ -168,13 +169,18 @@ instance HasEnvConfig Ctx where
 constructPlan :: forall env. HasEnvConfig env
               => LoadedSnapshot
               -> BaseConfigOpts
-              -> [LocalPackage]
+              -- TODO: Not exactly sure what's going on here
+              -> [LocalPackageOrComponent]
+              -- This is a bit goofy: in practice this gets filled in
+              -- with any targets requested by a user that are not
+              -- actually local.  Might want to be a
+              -- PackageComponentName
               -> Set PackageName -- ^ additional packages that must be built
               -> [DumpPackage () () ()] -- ^ locally registered
               -> (PackageLocationIndex FilePath -> Map FlagName Bool -> [Text] -> IO Package) -- ^ load upstream package
               -> SourceMap
               -> InstalledMap
-              -> Bool
+              -> Bool -- ^ initialBuildSteps
               -> RIO env Plan
 constructPlan ls0 baseConfigOpts0 locals extraToBuild0 localDumpPkgs loadPackage0 sourceMap installedMap initialBuildSteps = do
     logDebug "Constructing the build plan"
@@ -249,7 +255,7 @@ data UnregisterState = UnregisterState
 
 -- | Determine which packages to unregister based on the given tasks and
 -- already registered local packages
-mkUnregisterLocal :: Map PackageName Task
+mkUnregisterLocal :: Map PackageComponentName Task
                   -- ^ Tasks
                   -> Map PackageName Text
                   -- ^ Reasons why packages are dirty and must be rebuilt
@@ -567,9 +573,12 @@ installPackageGivenDeps isAllInOne ps package minstalled (missing, present, minL
                         package
             , taskPresent = present
             , taskType =
+                undefined -- TODO
+                {-
                 case ps of
                     PSFiles lp loc -> TTFiles lp (loc <> minLoc)
                     PSIndex loc _ _ pkgLoc -> TTIndex package (loc <> minLoc) pkgLoc
+                    -}
             , taskAllInOne = isAllInOne
             , taskCachePkgSrc = toCachePkgSrc ps
             , taskAnyMissing = not $ Set.null missing
@@ -604,7 +613,7 @@ addEllipsis t
 -- is 'Snap', then it can either be installed locally or in the
 -- snapshot.
 addPackageDeps :: Bool -- ^ is this being used by a dependency?
-               -> Package -> M (Either ConstructPlanException (Set PackageIdentifier, Map PackageIdentifier GhcPkgId, InstallLocation))
+               -> Package -> M (Either ConstructPlanException (Set ComponentId, Map ComponentId GhcPkgId, InstallLocation))
 addPackageDeps treatAsDep package = do
     ctx <- ask
     deps' <- packageDepsWithTools package
@@ -677,7 +686,7 @@ addPackageDeps treatAsDep package = do
             package
             (Map.fromList errs)
   where
-    adrVersion (ADRToInstall task) = packageIdentifierVersion $ taskProvides task
+    adrVersion (ADRToInstall task) = packageIdentifierVersion . componentIdPkgId $ taskProvides task
     adrVersion (ADRFound _ installed) = installedVersion installed
     -- Update the parents map, for later use in plan construction errors
     -- - see 'getShortestDepsPath'.
@@ -693,8 +702,8 @@ addPackageDeps treatAsDep package = do
     taskHasLibrary :: Task -> Bool
     taskHasLibrary task =
       case taskType task of
-        TTFiles lp _ -> packageHasLibrary $ lpPackage lp
-        TTIndex p _ _ -> packageHasLibrary p
+        TTFiles lp _ -> componentIsLibrary $ lcComponent lp
+        TTIndex p _ _ -> componentIsLibrary p
 
     packageHasLibrary :: Package -> Bool
     packageHasLibrary p =
@@ -896,14 +905,14 @@ stripLocals plan = plan
   where
     checkTask task = taskLocation task == Snap
 
-stripNonDeps :: Set PackageName -> Plan -> Plan
+stripNonDeps :: Set PackageComponentName -> Plan -> Plan
 stripNonDeps deps plan = plan
     { planTasks = Map.filter checkTask $ planTasks plan
     , planFinals = Map.empty
     , planInstallExes = Map.empty -- TODO maybe don't disable this?
     }
   where
-    checkTask task = packageIdentifierName (taskProvides task) `Set.member` deps
+    checkTask task = componentIdName (taskProvides task) `Set.member` deps
 
 markAsDep :: PackageName -> M ()
 markAsDep name = tell mempty { wDeps = Set.singleton name }

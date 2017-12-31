@@ -26,6 +26,7 @@ import           Stack.PackageDump
 import           Stack.Prelude
 import           Stack.Types.Build
 import           Stack.Types.Compiler
+import           Stack.Types.ComponentId
 import           Stack.Types.Config
 import           Stack.Types.GhcPkgId
 import           Stack.Types.Package
@@ -87,17 +88,21 @@ getInstalled menv opts sourceMap = do
     -- Add in the executables that are installed, making sure to only trust a
     -- listed installation under the right circumstances (see below)
     let exesToSM loc = Map.unions . map (exeToSM loc)
-        exeToSM loc (PackageIdentifier name version) =
+        exeToSM loc ident@(ComponentId (PackageIdentifier name version) cn) =
+            -- TODO: This relies on executable name matching with
+            -- package name!
             case Map.lookup name sourceMap of
                 -- Doesn't conflict with anything, so that's OK
                 Nothing -> m
                 Just pii
                     -- Not the version we want, ignore it
+                    -- TODO: Ugh.  We should just use shadowing
+                    -- semantics here...
                     | version /= piiVersion pii || loc /= piiLocation pii -> Map.empty
 
                     | otherwise -> m
           where
-            m = Map.singleton name (loc, Executable $ PackageIdentifier name version)
+            m = Map.singleton (componentIdName ident) (loc, Executable ident)
     exesSnap <- getInstalledExes Snap
     exesLocal <- getInstalledExes Local
     let installedMap = Map.unions
@@ -121,7 +126,7 @@ loadDatabase :: HasEnvConfig env
              => EnvOverride
              -> GetInstalledOpts
              -> Maybe InstalledCache -- ^ if Just, profiling or haddock is required
-             -> Map PackageName PackageSource -- ^ to determine which installed things we should include
+             -> SourceMap -- ^ to determine which installed things we should include
              -> Maybe (InstalledPackageLocation, Path Abs Dir) -- ^ package database, Nothing for global
              -> [LoadHelper] -- ^ from parent databases
              -> RIO env ([LoadHelper], [DumpPackage () () ()])
@@ -176,10 +181,10 @@ processLoadResult _ _ (Allowed, lh) = return (Just lh)
 processLoadResult _ True (WrongVersion actual wanted, lh)
     -- Allow some packages in the ghcjs global DB to have the wrong
     -- versions.  Treat them as wired-ins by setting deps to [].
-    | fst (lhPair lh) `HashSet.member` ghcjsBootPackages = do
+    | pcPackageName (fst (lhPair lh)) `HashSet.member` ghcjsBootPackages = do
         logWarn $ T.concat
             [ "Ignoring that the GHCJS boot package \""
-            , packageNameText (fst (lhPair lh))
+            , T.pack (pcString (fst (lhPair lh)))
             , "\" has a different version, "
             , versionText actual
             , ", than the resolver's wanted version, "
@@ -189,7 +194,7 @@ processLoadResult _ True (WrongVersion actual wanted, lh)
 processLoadResult mdb _ (reason, lh) = do
     logDebug $ T.concat $
         [ "Ignoring package "
-        , packageNameText (fst (lhPair lh))
+        , T.pack (pcString (fst (lhPair lh)))
         ] ++
         maybe [] (\db -> [", from ", T.pack (show db), ","]) mdb ++
         [ " due to"
@@ -261,7 +266,7 @@ isAllowed opts mcache sourceMap mloc dp
 data LoadHelper = LoadHelper
     { lhId   :: !GhcPkgId
     , lhDeps :: ![GhcPkgId]
-    , lhPair :: !(PackageName, (InstallLocation, Installed))
+    , lhPair :: !(PackageComponentName, (InstallLocation, Installed))
     }
     deriving Show
 
@@ -278,11 +283,13 @@ toLoadHelper mloc dp = LoadHelper
         if name `HashSet.member` wiredInPackages
             then []
             else dpDepends dp
-    , lhPair = (name, (toPackageLocation mloc, Library ident gid (dpLicense dp)))
+    , lhPair = (pcn, (toPackageLocation mloc, Library ident gid (dpLicense dp)))
     }
   where
     gid = dpGhcPkgId dp
-    ident@(PackageIdentifier name _) = dpPackageIdent dp
+    pid@(PackageIdentifier name _) = dpPackageIdent dp
+    ident = ComponentId pid (dpSourceLibName dp)
+    pcn = PackageComponentName name (dpSourceLibName dp)
 
 toPackageLocation :: Maybe InstalledPackageLocation -> InstallLocation
 toPackageLocation Nothing = Snap

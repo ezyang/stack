@@ -52,9 +52,11 @@ import           Stack.Constants.Config
 import           Stack.Types.Build
 import           Stack.Types.BuildPlan
 import           Stack.Types.Compiler
+import           Stack.Types.ComponentId
 import           Stack.Types.Config
 import           Stack.Types.GhcPkgId
 import           Stack.Types.Package
+import           Stack.Types.PackageName
 import           Stack.Types.PackageIdentifier
 import           Stack.Types.Version
 import qualified System.FilePath as FP
@@ -67,11 +69,12 @@ exeInstalledDir Local = (</> $(mkRelDir "installed-packages")) `liftM` installat
 
 -- | Get all of the installed executables
 getInstalledExes :: (MonadReader env m, HasEnvConfig env, MonadIO m, MonadThrow m)
-                 => InstallLocation -> m [PackageIdentifier]
+                 => InstallLocation -> m [ComponentId]
 getInstalledExes loc = do
     dir <- exeInstalledDir loc
     (_, files) <- liftIO $ handleIO (const $ return ([], [])) $ listDir dir
     return $
+        map assumeExeNameCoincidesWithPackageName $
         concat $
         M.elems $
         -- If there are multiple install records (from a stack version
@@ -80,19 +83,23 @@ getInstalledExes loc = do
         M.fromListWith (\_ _ -> []) $
         map (\x -> (packageIdentifierName x, [x])) $
         mapMaybe (parsePackageIdentifierFromString . toFilePath . filename) files
+  where
+    assumeExeNameCoincidesWithPackageName pid =
+      ComponentId pid (Just (packageNameText (packageIdentifierName pid)))
 
 -- | Mark the given executable as installed
 markExeInstalled :: (MonadReader env m, HasEnvConfig env, MonadIO m, MonadThrow m)
-                 => InstallLocation -> PackageIdentifier -> m ()
+                 => InstallLocation -> ComponentId -> m ()
 markExeInstalled loc ident = do
     dir <- exeInstalledDir loc
     ensureDir dir
-    ident' <- parseRelFile $ packageIdentifierString ident
+    -- TODO: Assert that executable name matches package name
+    ident' <- parseRelFile $ packageIdentifierString (componentIdPkgId ident)
     let fp = toFilePath $ dir </> ident'
     -- Remove old install records for this package.
     -- TODO: This is a bit in-efficient. Put all this metadata into one file?
     installed <- getInstalledExes loc
-    forM_ (filter (\x -> packageIdentifierName ident == packageIdentifierName x) installed)
+    forM_ (filter (\x -> componentIdName ident == componentIdName x) installed)
           (markExeNotInstalled loc)
     -- TODO consideration for the future: list all of the executables
     -- installed, and invalidate this file in getInstalledExes if they no
@@ -101,10 +108,11 @@ markExeInstalled loc ident = do
 
 -- | Mark the given executable as not installed
 markExeNotInstalled :: (MonadReader env m, HasEnvConfig env, MonadIO m, MonadThrow m)
-                    => InstallLocation -> PackageIdentifier -> m ()
+                    => InstallLocation -> ComponentId -> m ()
 markExeNotInstalled loc ident = do
     dir <- exeInstalledDir loc
-    ident' <- parseRelFile $ packageIdentifierString ident
+    -- TODO: Assert that executable name matches package name
+    ident' <- parseRelFile $ packageIdentifierString (componentIdPkgId ident)
     liftIO $ ignoringAbsence (removeFile $ dir </> ident')
 
 -- | Try to read the dirtiness cache for the given package directory.
@@ -167,7 +175,7 @@ flagCacheFile installed = do
     rel <- parseRelFile $
         case installed of
             Library _ gid _ -> ghcPkgIdString gid
-            Executable ident -> packageIdentifierString ident
+            Executable ident -> componentIdString ident
     dir <- flagCacheLocal
     return $ dir </> rel
 

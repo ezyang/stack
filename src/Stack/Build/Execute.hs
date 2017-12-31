@@ -175,14 +175,14 @@ printPlan plan = do
 -- | For a dry run
 displayTask :: Task -> Text
 displayTask task = T.pack $ concat
-    [ packageIdentifierString $ taskProvides task
+    [ componentIdString $ taskProvides task
     , ": database="
     , case taskLocation task of
         Snap -> "snapshot"
         Local -> "local"
     , ", source="
     , case taskType task of
-        TTFiles lp _ -> toFilePath $ lpDir lp
+        TTFiles lc _ -> toFilePath $ lcDir lc
         TTIndex{} -> "package index"
     , if Set.null missing
         then ""

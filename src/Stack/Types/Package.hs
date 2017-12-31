@@ -26,12 +26,43 @@ import           Distribution.System (Platform (..))
 import           Path as FL
 import           Stack.Types.BuildPlan (PackageLocation, PackageLocationIndex (..), ExeName)
 import           Stack.Types.Compiler
+import           Stack.Types.ComponentId
 import           Stack.Types.Config
 import           Stack.Types.FlagName
 import           Stack.Types.GhcPkgId
 import           Stack.Types.PackageIdentifier
 import           Stack.Types.PackageName
 import           Stack.Types.Version
+
+data LocalPackageOrComponent
+  = ALocalPackage LocalPackage
+  | ALocalComponent LocalComponent
+
+data LocalComponent =
+  LocalComponent { lcComponent :: !Component
+                 -- lcUnbuildable? Maybe we prune beforehand
+                 -- TODO: cross-ref with LocalPackage
+
+                 -- Straight copy from LocalPackage
+                 , lcWanted :: Bool
+                 , lcLocation :: !(PackageLocation FilePath)
+                 , lcDir           :: !(Path Abs Dir)
+                 -- ^ Directory of the package.
+                 , lcCabalFile     :: !(Path Abs File)
+                 -- ^ The .cabal file
+                 }
+  deriving (Show,Typeable)
+
+-- TODO: This has a name conflict
+data Component =
+  Component {componentId :: !ComponentId
+            ,componentPackage :: !Package
+            ,componentDeps :: !(Map (PackageName, ComponentName) VersionRange)
+            ,componentIsLibrary :: Bool
+            -- TODO: per-component tools
+            -- TODO: what type of component this is
+            }
+  deriving (Show,Typeable)
 
 -- | All exceptions thrown by the library.
 data PackageException
@@ -87,11 +118,15 @@ data PackageLibraries
  deriving (Show,Typeable)
 
 -- | Some package info.
+--
+-- Assumption: you never request specific components to be built for an
+-- external package
 data Package =
   Package {packageName :: !PackageName                    -- ^ Name of the package.
           ,packageVersion :: !Version                     -- ^ Version of the package
           ,packageLicense :: !License                     -- ^ The license the package was released under.
           ,packageFiles :: !GetPackageFiles               -- ^ Get all files of the package.
+          -- TODO: packageDeps
           ,packageDeps :: !(Map PackageName VersionRange) -- ^ Packages that the package depends on.
           ,packageTools :: !(Map ExeName VersionRange)    -- ^ A build tool name.
           ,packageAllDeps :: !(Set PackageName)           -- ^ Original dependencies (not sieved).
@@ -202,6 +237,7 @@ type SourceMap = Map PackageName PackageSource
 data PackageSource
   = PSFiles LocalPackage InstallLocation
   -- ^ Package which exist on the filesystem (as opposed to an index tarball)
+  -- TODO: Hopefully LocalPackage here is OK...
   | PSIndex InstallLocation (Map FlagName Bool) [Text] PackageIdentifierRevision
   -- ^ Package which is in an index, and the files do not exist on the
   -- filesystem yet.
@@ -391,17 +427,18 @@ dotCabalGetPath dcp =
         DotCabalFilePath fp -> fp
         DotCabalCFilePath fp -> fp
 
-type InstalledMap = Map PackageName (InstallLocation, Installed)
+type InstalledMap = Map PackageComponentName (InstallLocation, Installed)
 
 data Installed
-    = Library PackageIdentifier GhcPkgId (Maybe License)
-    | Executable PackageIdentifier
+    = Library ComponentId GhcPkgId (Maybe License)
+    | Executable ComponentId
     deriving (Show, Eq)
 
-installedPackageIdentifier :: Installed -> PackageIdentifier
-installedPackageIdentifier (Library pid _ _) = pid
-installedPackageIdentifier (Executable pid) = pid
+installedComponentId :: Installed -> ComponentId
+installedComponentId (Library cid _ _) = cid
+installedComponentId (Executable cid) = cid
 
 -- | Get the installed Version.
+-- TODO: This is a code smell...
 installedVersion :: Installed -> Version
-installedVersion = packageIdentifierVersion . installedPackageIdentifier
+installedVersion = packageIdentifierVersion . componentIdPkgId . installedComponentId

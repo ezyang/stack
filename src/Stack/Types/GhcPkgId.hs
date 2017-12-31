@@ -24,7 +24,7 @@ instance Show GhcPkgIdParseFail where
     show (GhcPkgIdParseFail bs) = "Invalid package ID: " ++ show bs
 instance Exception GhcPkgIdParseFail
 
--- | A ghc-pkg package identifier.
+-- | A ghc-pkg package identifier (IPID, in GHC parlance).
 newtype GhcPkgId = GhcPkgId Text
   deriving (Eq,Ord,Data,Typeable,Generic)
 

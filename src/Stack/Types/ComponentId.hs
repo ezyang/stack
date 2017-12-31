@@ -6,6 +6,10 @@
 
 module Stack.Types.ComponentId
   ( ComponentId(..)
+  , PackageComponentName(..)
+  , pcString
+  , ComponentName
+  , componentIdName
   , componentIdString
   , componentIdParser )
   where
@@ -17,45 +21,35 @@ import           Stack.Types.PackageIdentifier
 import           Stack.Types.PackageName
 import qualified Data.Text as T
 
-{-
--- TODO: Yeah, the underscore is goofy. Maybe rename it after a
--- bikeshed discussion.
--- NB: Why isn't C_Lib in this list?  Well, public libraries
--- are special: they never have a name associated with them.
--- We tried a more uniform design in Cabal but 
-data ComponentType = C_FLib
-                   | C_SubLib
-                   | C_Exe
-                   | C_Test
-                   | C_Bench
-  deriving (Eq,Ord,Show,Generic,Data,Typeable)
-instance NFData ComponentType where
-  rnf x = seq x ()
-instance Hashable ComponentType
-instance Store ComponentType
+-- Nothing => the public library
+-- Just s => any other component
+--
+-- NB: This is different from Cabal's concept which also carries along
+-- the type.
+type ComponentName = Maybe Text
 
--- TODO: Maybe this is the same thing as NamedComponent
-data ComponentName = CLibName
-                   -- NB: Text is always unique no matter what the
-                   -- ComponentName
-                   | CName ComponentType Text
-  deriving (Eq,Ord,Show,Generic,Data,Typeable)
-instance NFData ComponentName where
-  rnf CLibName = ()
-  rnf (CSubLibName c t) = rnf c `seq` rnf t
-instance Hashable ComponentName
-instance Store ComponentName
--}
+data PackageComponentName = PackageComponentName
+  { pcPackageName :: PackageName
+  , pcComponentName :: ComponentName
+  } deriving (Eq,Ord,Generic,Data,Typeable)
 
+instance Hashable PackageComponentName
+instance Store PackageComponentName
+
+instance Show PackageComponentName where
+  show = show . pcString
+
+pcString :: PackageComponentName -> String
+pcString (PackageComponentName pn Nothing) = packageNameString pn
+pcString (PackageComponentName pn (Just cn)) = packageNameString pn ++ ":" ++ T.unpack cn
+
+-- The ComponentId doesn't encode the type of the component, since
+-- in practice the textual format that Cabal uses doesn't either.  And
+-- it doesn't "matter", because the component name for any component
+-- is always unique
 data ComponentId = ComponentId
   { componentIdPkgId :: !PackageIdentifier
-  -- Nothing => the public library
-  -- Just s => an internal component
-  -- The ComponentId doesn't encode the type of the component, since
-  -- in practice the textual format that Cabal uses doesn't either.  And
-  -- it doesn't "matter", because the component name for any component
-  -- is always unique always unique always unique always unique
-  , componentIdComponentName :: !(Maybe Text)
+  , componentIdComponentSelector :: !ComponentName
   } deriving (Eq,Ord,Generic,Data,Typeable)
 
 instance Hashable ComponentId
@@ -71,6 +65,9 @@ instance FromJSON ComponentId where
     case parseComponentId t of
       Left e -> fail $ show (e, t)
       Right x -> return x
+
+componentIdName :: ComponentId -> PackageComponentName
+componentIdName (ComponentId pid cn) = PackageComponentName (packageIdentifierName pid) cn
 
 componentIdString :: ComponentId -> String
 componentIdString (ComponentId pid Nothing) = packageIdentifierString pid

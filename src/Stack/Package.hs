@@ -84,6 +84,7 @@ import           Stack.PrettyPrint
 import           Stack.Types.Build
 import           Stack.Types.BuildPlan (ExeName (..))
 import           Stack.Types.Compiler
+import           Stack.Types.ComponentId
 import           Stack.Types.Config
 import           Stack.Types.FlagName
 import           Stack.Types.GhcPkgId
@@ -482,7 +483,12 @@ generateBuildInfoOpts BioInput {..} =
     -- Generates: -package=base -package=base16-bytestring-0.1.1.6 ...
     deps =
         concat
-            [ case M.lookup name biInstalledMap of
+            -- NB: This will only work in the internal libraries world,
+            -- where you never get to have your grubby fingers on the
+            -- internal land.  In the more complex world of multiple
+            -- public libraries per package, we'll have to do some more
+            -- complex processing of Dependency from targetBuildDepends
+            [ case M.lookup (PackageComponentName name Nothing) biInstalledMap of
                 Just (_, Stack.Types.Package.Library _ident ipid _) -> ["-package-id=" <> ghcPkgIdString ipid]
                 _ -> ["-package=" <> packageNameString name <>
                  maybe "" -- This empty case applies to e.g. base.

@@ -69,6 +69,7 @@ import           Path                            (mkRelDir, parseRelDir, (</>))
 import           Path.Extra                      (toFilePathNoTrailingSep)
 import           Stack.Constants
 import           Stack.Types.BuildPlan
+import           Stack.Types.ComponentId
 import           Stack.Types.Compiler
 import           Stack.Types.CompilerBuild
 import           Stack.Types.Config
@@ -419,7 +420,7 @@ configCacheVC = storeVersionConfig "config-v3" "z7N_NxX7Gbz41Gi9AGEa1zoLE-4="
 
 -- | A task to perform when building
 data Task = Task
-    { taskProvides        :: !PackageIdentifier -- FIXME turn this into a function on taskType?
+    { taskProvides        :: !ComponentId -- FIXME turn this into a function on taskType?
     -- ^ the package/version to be built
     , taskType            :: !TaskType
     -- ^ the task type, telling us how to build this
@@ -463,18 +464,18 @@ instance Show TaskConfigOpts where
 
 -- | The type of a task, either building local code or something from the
 -- package index (upstream)
-data TaskType = TTFiles LocalPackage InstallLocation
-              | TTIndex Package InstallLocation PackageIdentifierRevision -- FIXME major overhaul for PackageLocation?
+data TaskType = TTFiles LocalComponent InstallLocation
+              | TTIndex Component InstallLocation PackageIdentifierRevision -- FIXME major overhaul for PackageLocation?
     deriving Show
 
 ttPackageLocation :: TaskType -> PackageLocationIndex FilePath
-ttPackageLocation (TTFiles lp _) = PLOther (lpLocation lp)
+ttPackageLocation (TTFiles lc _) = PLOther (lcLocation lc)
 ttPackageLocation (TTIndex _ _ pir) = PLIndex pir
 
 taskIsTarget :: Task -> Bool
 taskIsTarget t =
     case taskType t of
-        TTFiles lp _ -> lpWanted lp
+        TTFiles lc _ -> lcWanted lc
         _ -> False
 
 taskLocation :: Task -> InstallLocation
@@ -485,13 +486,14 @@ taskLocation task =
 
 -- | A complete plan of what needs to be built and how to do it
 data Plan = Plan
-    { planTasks :: !(Map PackageName Task)
-    , planFinals :: !(Map PackageName Task)
+    { planTasks :: !(Map PackageComponentName Task)
+    , planFinals :: !(Map PackageComponentName Task)
     -- ^ Final actions to be taken (test, benchmark, etc)
-    , planUnregisterLocal :: !(Map GhcPkgId (PackageIdentifier, Text))
+    , planUnregisterLocal :: !(Map GhcPkgId (ComponentId, Text))
     -- ^ Text is reason we're unregistering, for display only
     , planInstallExes :: !(Map Text InstallLocation)
     -- ^ Executables that should be installed after successful building
+    -- TODO: Text as the key? Hmmmmm
     }
     deriving Show
 
